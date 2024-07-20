@@ -1,8 +1,5 @@
 import hre from "hardhat";
 
-// Note: We are using ethers version 5 due to issues deploying with version 6.
-// For details: https://ethereum.stackexchange.com/questions/144451/typeerror-cannot-read-properties-of-undefined-reading-jsonrpcprovider
-
 const GELATO_FORWARDER = "0xd8253782c45a12053594b9deB72d8e8aB2Fca54c";
 
 async function main() {

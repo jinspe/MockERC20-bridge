@@ -53,8 +53,8 @@ describe("MockERC20", function () {
     const afterBurnbalance = await MockERC20.balanceOf(ownerAddress);
     console.log("New balance:", hre.ethers.formatEther(afterBurnbalance));
 
-    const burnAmount = hre.ethers.parseEther("50");
-    const afterBurnExpectedBalance = afterMintexpectedBalance - burnAmount;
+    const afterBurnExpectedBalance =
+      afterMintexpectedBalance - hre.ethers.parseEther("50");
     expect(afterBurnbalance.toString()).to.equal(afterBurnExpectedBalance);
   });
 });
