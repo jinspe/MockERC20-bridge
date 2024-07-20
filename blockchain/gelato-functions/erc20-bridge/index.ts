@@ -77,13 +77,6 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
   console.log(
     `Chain listened for burn: ${chainListened}, chain to mint on: ${chainToMintOn}`
   );
-  // log contract addresses
-  console.log(
-    `Burn contract address: ${burnContractAddress} on ${chainListened}`
-  );
-  console.log(
-    `Mint contract address: ${mintContractAddress} on ${chainToMintOn}`
-  );
 
   // 2. Get the burn events from the chain we are listening to
   let burnEvents: BurnEvent[] = [];
@@ -125,7 +118,6 @@ Web3Function.onRun(async (context: Web3FunctionContext) => {
   });
 
   // 3. Mint tokens to the addresses that burned them
-
   let sucessfulMintCount = 0;
   try {
     const mintResults = await minTokens({
@@ -177,12 +169,10 @@ async function getBurnEvents({
   const topics = [tokenContract.interface.getEventTopic(BURN_EVENT_NAME)];
   const currentBlock = await provider.getBlockNumber();
 
-  // Retrieve last processed block number
   let lastBlock = lastProcessedBlock
     ? parseInt(lastProcessedBlock)
     : currentBlock - DEFAULT_LAST_BLOCK_OFFSET;
 
-  // Fetch recent logs
   const logs: Log[] = [];
   let nbRequests = 0;
 
@@ -203,7 +193,6 @@ async function getBurnEvents({
     lastBlock = toBlock;
   }
 
-  // Parse burn events and log them
   let burnEvents: BurnEvent[] = [];
   for (const log of logs) {
     const event = tokenContract.interface.parseLog(log);

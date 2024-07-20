@@ -60,7 +60,7 @@ async function mintTokens({
   contractAddress: string;
   signer: Wallet;
   toAddress: string;
-  amount: string; // Amount in Ether as a string
+  amount: string;
 }): Promise<TransactionReceipt | null> {
   const abi = ["function mint(address to, uint256 amount)"];
   const iface = new ethers.Interface(abi);
@@ -294,9 +294,7 @@ describe("Cross-chain ERC20 Test", () => {
     );
     expect(optimismRunRes.canExec).to.be.true;
     // Wait to not exceed the rate limit
-    await new Promise((resolve) =>
-      setTimeout(resolve, WAIT_TIME_AFTER_FUNCTION_EXECUTION)
-    );
+    await sleep(WAIT_TIME_AFTER_FUNCTION_EXECUTION);
 
     const finalBalanceArbitrum = await checkBalance({
       contractAddress: contractAddressArbitrum,
