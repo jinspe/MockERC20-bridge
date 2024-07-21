@@ -10,6 +10,7 @@
     "c:mint-a": "hardhat run scripts/mintTokens.ts --network arbitrumSepolia",
     "c:mint-o": "hardhat run scripts/mintTokens.ts --network optimismSepolia",
     "g:test": "w3f test gelato-functions/erc20-bridge/index.ts --logs --chain-id=421614",
+    "g:deploy": "w3f deploy gelato-functions/erc20-bridge/index.ts",
     "jest": "npx jest"
   },
   "devDependencies": {

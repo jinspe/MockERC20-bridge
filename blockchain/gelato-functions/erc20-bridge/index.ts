@@ -27,9 +27,9 @@ const TOKEN_ABI = [
 
 const LAST_PROCESSED_BLOCK_STORAGE_KEY_ARBITRUM = "lastProcessedBlockArbitrum";
 const LAST_PROCESSED_BLOCK_STORAGE_KEY_OPTIMISM = "lastProcessedBlockOptimism";
-const MAX_RANGE = 500; // limit range of events to comply with rpc providers
-const MAX_REQUESTS = 50; // limit number of requests on every execution to avoid hitting timeout
-const DEFAULT_LAST_BLOCK_OFFSET = 2000;
+const MAX_RANGE = 400; // limit range of events to comply with rpc providers
+const MAX_REQUESTS = 5; // limit number of requests on every execution to avoid hitting timeout
+const MAX_LAST_BLOCK_OFFSET = 2000;
 
 Web3Function.onRun(async (context: Web3FunctionContext) => {
   // 1. Get the secrets and storage
@@ -169,13 +169,18 @@ async function getBurnEvents({
   const topics = [tokenContract.interface.getEventTopic(BURN_EVENT_NAME)];
   const currentBlock = await provider.getBlockNumber();
 
-  let lastBlock = lastProcessedBlock
-    ? parseInt(lastProcessedBlock)
-    : currentBlock - DEFAULT_LAST_BLOCK_OFFSET;
+  // WARNING: FUNCTION TIMEOUTS IF THE RANGE IS TOO BIG
+  let lastBlock = Math.max(
+    lastProcessedBlock
+      ? parseInt(lastProcessedBlock)
+      : currentBlock - MAX_LAST_BLOCK_OFFSET,
+    currentBlock - MAX_LAST_BLOCK_OFFSET
+  );
 
   const logs: Log[] = [];
   let nbRequests = 0;
 
+  // Calling sequentially to avoid timeout
   while (lastBlock < currentBlock && nbRequests < MAX_REQUESTS) {
     nbRequests++;
     const fromBlock = lastBlock + 1;
