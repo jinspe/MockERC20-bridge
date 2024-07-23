@@ -179,22 +179,14 @@ export default function Web3Provider({
       // Check for specific error code 4902 (Unrecognized chain ID)
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       if (error.code === 4902) {
-        try {
-          // Prompt user to add the network to MetaMask
-          await walletClient.addChain({
-            chain: networkConfig,
-          });
-          // Retry switching the network after adding
-          await walletClient.switchChain(networkConfig);
-          setSelectedNetwork(network);
-        } catch (addError) {
-          console.error("Failed to add network:", addError);
-        }
+        // Prompt user to add the network to MetaMask
+        await walletClient.addChain({
+          chain: networkConfig,
+        });
       } else {
-        console.error("Error switching network:", error);
+        throw error;
       }
     }
-
     await walletClient.switchChain(networkConfig);
     setSelectedNetwork(network);
   }
