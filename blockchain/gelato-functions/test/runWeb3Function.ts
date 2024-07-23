@@ -1,14 +1,11 @@
 import {
-  Web3FunctionContextData,
   MultiChainProviderConfig,
   Web3FunctionRunnerOptions,
+  Web3FunctionContextDataBase,
 } from "@gelatonetwork/web3-functions-sdk";
 import { Web3FunctionRunner } from "@gelatonetwork/web3-functions-sdk/runtime";
 import { Web3FunctionBuilder } from "@gelatonetwork/web3-functions-sdk/builder";
-import {
-  JsonRpcProvider,
-  StaticJsonRpcProvider,
-} from "@ethersproject/providers";
+import { StaticJsonRpcProvider } from "@ethersproject/providers";
 
 export const MAX_RPC_LIMIT = 100;
 export const MAX_DOWNLOAD_LIMIT = 10 * 1024 * 1024;
@@ -18,8 +15,8 @@ export const MAX_STORAGE_LIMIT = 1 * 1024 * 1024;
 
 export async function runWeb3Function(
   web3FunctionPath: string,
-  context: Web3FunctionContextData<any>,
-  providers?: JsonRpcProvider[]
+  context: Web3FunctionContextDataBase,
+  providersUrls: string[]
 ) {
   const buildRes = await Web3FunctionBuilder.build(web3FunctionPath, {
     debug: false,
@@ -50,20 +47,8 @@ export async function runWeb3Function(
 
   const multiChainProviderConfig: MultiChainProviderConfig = {};
 
-  if (!providers) {
-    if (!process.env.PROVIDER_URLS) {
-      console.error(`Missing PROVIDER_URLS in .env file`);
-      process.exit();
-    }
-
-    const urls = process.env.PROVIDER_URLS.split(",");
-    providers = [];
-    for (const url of urls) {
-      providers.push(new StaticJsonRpcProvider(url));
-    }
-  }
-
-  for (const provider of providers) {
+  for (const providerUrl of providersUrls) {
+    const provider = new StaticJsonRpcProvider(providerUrl);
     const chainId = (await provider.getNetwork()).chainId;
 
     multiChainProviderConfig[chainId] = provider;

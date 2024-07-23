@@ -4,11 +4,17 @@ import { expect } from "chai";
 import { runWeb3Function } from "./runWeb3Function";
 import hre from "hardhat";
 import { JsonRpcProvider } from "@ethersproject/providers";
-import { Wallet, TransactionReceipt, ethers } from "ethers";
+import { Wallet } from "@ethersproject/wallet";
+import { Interface } from "@ethersproject/abi";
+import { Contract } from "@ethersproject/contracts";
+import { parseEther, formatEther, parseUnits } from "@ethersproject/units";
+import { TransactionReceipt } from "@ethersproject/abstract-provider";
+import * as dotenv from "dotenv";
 
 const w3fName = "erc20-bridge";
 const w3fRootDir = path.join("gelato-functions");
 const w3fPath = path.join(w3fRootDir, w3fName, "index.ts");
+dotenv.config();
 
 const ARBITRUM_SEP_CHAIN_ID = 421614;
 const OPTIMISM_SEP_CHAIN_ID = 11155420;
@@ -20,10 +26,11 @@ const AMOUNT_TO_BURN = "50";
 const WAIT_TIME_AFTER_FUNCTION_EXECUTION = 5000;
 
 // Using low level transactions to mint and burn tokens as we need to change the provider
-const abi = [
+const TOKEN_ABI = [
   "function balanceOf(address) view returns (uint256)",
   "function mint(address to, uint256 amount)",
   "function burn(uint256 amount)",
+  "event TokensBurned(address indexed account, uint256 amount)",
 ];
 
 async function sleep(ms: number) {
@@ -39,7 +46,7 @@ async function deployContract({
 }): Promise<string> {
   const MockERC20Factory = await hre.ethers.getContractFactory(
     "MockERC20",
-    signer
+    signer as any
   );
   const MockERC20ArbitrumNew = await MockERC20Factory.deploy(
     "Mock Token",
@@ -62,11 +69,10 @@ async function mintTokens({
   toAddress: string;
   amount: string;
 }): Promise<TransactionReceipt | null> {
-  const abi = ["function mint(address to, uint256 amount)"];
-  const iface = new ethers.Interface(abi);
+  const iface = new Interface(TOKEN_ABI);
   const data = iface.encodeFunctionData("mint", [
     toAddress,
-    ethers.parseEther(amount),
+    parseEther(amount),
   ]);
   const tx = {
     to: contractAddress,
@@ -86,8 +92,8 @@ async function burnTokens({
   signer: Wallet;
   amount: string;
 }): Promise<TransactionReceipt | null> {
-  const iface = new ethers.Interface(abi);
-  const data = iface.encodeFunctionData("burn", [ethers.parseEther(amount)]);
+  const iface = new Interface(TOKEN_ABI);
+  const data = iface.encodeFunctionData("burn", [parseEther(amount)]);
   const tx = {
     to: contractAddress,
     data: data,
@@ -95,6 +101,25 @@ async function burnTokens({
   const txResponse = await signer.sendTransaction(tx);
   const receipt = await txResponse.wait();
   return receipt;
+}
+
+async function getBurnEventLog({
+  contractAddress,
+  blockHash,
+  provider,
+}: {
+  contractAddress: string;
+  blockHash: string;
+  provider: JsonRpcProvider;
+}) {
+  const tokenContract = new Contract(contractAddress, TOKEN_ABI, provider);
+  const topics = [tokenContract.interface.getEventTopic("TokensBurned")];
+  const logs = await provider.getLogs({
+    address: contractAddress,
+    blockHash: blockHash,
+    topics: topics,
+  });
+  return logs[0];
 }
 
 async function checkBalance({
@@ -106,14 +131,13 @@ async function checkBalance({
   provider: JsonRpcProvider;
   address: string;
 }): Promise<bigint> {
-  const abi = ["function balanceOf(address) view returns (uint256)"];
-  const iface = new ethers.Interface(abi);
+  const iface = new Interface(TOKEN_ABI);
   const data = iface.encodeFunctionData("balanceOf", [address]);
   const result = await provider.call({
     to: contractAddress,
     data: data,
   });
-  const balance = ethers.toBigInt(result);
+  const balance = BigInt(result);
   return balance;
 }
 
@@ -122,18 +146,12 @@ describe("Cross-chain ERC20 Test", () => {
     const { secrets } = Web3FunctionLoader.load(w3fName, w3fRootDir);
     const privateKey = secrets["PRIVATE_KEY"];
 
-    const arbitrumRpc = secrets["ARBITRUM_SEP_RPC_URL"];
-    const optimismRpc = secrets["OPTIMISM_SEP_RPC_URL"];
+    const arbitrumRpc = process.env.ARBITRUM_SEPOLIA_URL;
+    const optimismRpc = process.env.OPTIMISM_SEPOLIA_URL;
     const arbitrumProvider = new JsonRpcProvider(arbitrumRpc);
     const optimismProvider = new JsonRpcProvider(optimismRpc);
-    const arbitrumSigner = new ethers.Wallet(
-      privateKey,
-      new ethers.JsonRpcProvider(arbitrumRpc)
-    );
-    const optimismSigner = new ethers.Wallet(
-      privateKey,
-      new ethers.JsonRpcProvider(optimismRpc)
-    );
+    const arbitrumSigner = new Wallet(privateKey, arbitrumProvider);
+    const optimismSigner = new Wallet(privateKey, optimismProvider);
     const ownerAddress = await arbitrumSigner.getAddress();
 
     const contractAddressOptimism = await deployContract({
@@ -156,14 +174,13 @@ describe("Cross-chain ERC20 Test", () => {
     const arbitrumContext = {
       secrets: {
         ...secrets,
-        CHAIN_LISTENED: "arbitrumSepolia",
-        ARBITRUM_SEP_CONTRACT_ADDRESS: contractAddressArbitrum,
-        OPTIMISM_SEP_CONTRACT_ADDRESS: contractAddressOptimism,
+        CONTRACT_ADDRESS_TO_MINT_ON: contractAddressOptimism,
+        PROVIDER_TO_MINT_ON_URL: optimismRpc,
       },
       storage: {},
       gelatoArgs: {
         chainId: ARBITRUM_SEP_CHAIN_ID,
-        gasPrice: ethers.parseUnits("100", "gwei").toString(),
+        gasPrice: parseUnits("100", "gwei").toString(),
       },
       userArgs: {},
     };
@@ -171,14 +188,13 @@ describe("Cross-chain ERC20 Test", () => {
     const optimismContext = {
       secrets: {
         ...secrets,
-        CHAIN_LISTENED: "optimismSepolia",
-        ARBITRUM_SEP_CONTRACT_ADDRESS: contractAddressArbitrum,
-        OPTIMISM_SEP_CONTRACT_ADDRESS: contractAddressOptimism,
+        CONTRACT_ADDRESS_TO_MINT_ON: contractAddressArbitrum,
+        PROVIDER_TO_MINT_ON_URL: arbitrumRpc,
       },
       storage: {},
       gelatoArgs: {
         chainId: OPTIMISM_SEP_CHAIN_ID,
-        gasPrice: ethers.parseUnits("100", "gwei").toString(),
+        gasPrice: parseUnits("100", "gwei").toString(),
       },
       userArgs: {},
     };
@@ -191,7 +207,7 @@ describe("Cross-chain ERC20 Test", () => {
     });
     console.log(
       "Initial Arbitrum balance:",
-      ethers.formatEther(initialBalanceArbitrum)
+      formatEther(initialBalanceArbitrum)
     );
     await mintTokens({
       contractAddress: contractAddressArbitrum,
@@ -207,14 +223,14 @@ describe("Cross-chain ERC20 Test", () => {
     });
     console.log(
       "Balance after minting on Arbitrum:",
-      ethers.formatEther(afterMintBalanceArbitrum)
+      formatEther(afterMintBalanceArbitrum)
     );
     expect(afterMintBalanceArbitrum).to.equal(
-      initialBalanceArbitrum + ethers.parseEther(AMOUNT_TO_MINT)
+      initialBalanceArbitrum + parseEther(AMOUNT_TO_MINT).toBigInt()
     );
 
     // 2. Burn tokens on Arbitrum
-    await burnTokens({
+    const arbitrumBurnReceipt = await burnTokens({
       contractAddress: contractAddressArbitrum,
       signer: arbitrumSigner,
       amount: AMOUNT_TO_BURN,
@@ -227,11 +243,16 @@ describe("Cross-chain ERC20 Test", () => {
     });
     console.log(
       "Balance after burning on Arbitrum:",
-      ethers.formatEther(afterBurnBalanceArbitrum)
+      formatEther(afterBurnBalanceArbitrum)
     );
     expect(afterBurnBalanceArbitrum).to.equal(
-      afterMintBalanceArbitrum - ethers.parseEther(AMOUNT_TO_BURN)
+      afterMintBalanceArbitrum - parseEther(AMOUNT_TO_BURN).toBigInt()
     );
+    const arbitrumBurnLog = await getBurnEventLog({
+      contractAddress: contractAddressArbitrum,
+      blockHash: arbitrumBurnReceipt?.blockHash || "",
+      provider: arbitrumProvider,
+    });
 
     // 3. Execute the gelato function on Arbitrum as listener
     const initialBalanceOptimism = await checkBalance({
@@ -241,33 +262,33 @@ describe("Cross-chain ERC20 Test", () => {
     });
     console.log(
       "Initial Optimism balance:",
-      ethers.formatEther(initialBalanceOptimism)
+      formatEther(initialBalanceOptimism)
     );
 
     const { result: arbitrumRunRes } = await runWeb3Function(
       w3fPath,
-      arbitrumContext,
-      [arbitrumProvider]
+      { ...arbitrumContext, log: arbitrumBurnLog },
+      [arbitrumRpc || "", optimismRpc || ""]
     );
-    expect(arbitrumRunRes.canExec).to.be.true;
-    // sleep to not exceed the rate limit
+    expect(arbitrumRunRes.canExec).to.be.false;
+    // sleep to not exceed the rate limit on relay
     await sleep(WAIT_TIME_AFTER_FUNCTION_EXECUTION);
 
     const afterRelayBalanceOptimism = await checkBalance({
-      contractAddress: contractAddressArbitrum,
-      provider: arbitrumProvider,
+      contractAddress: contractAddressOptimism,
+      provider: optimismProvider,
       address: ownerAddress,
     });
     console.log(
       "Balance after cross-chain relay on Optimism:",
-      ethers.formatEther(afterRelayBalanceOptimism)
+      formatEther(afterRelayBalanceOptimism)
     );
     expect(afterRelayBalanceOptimism).to.equal(
-      initialBalanceOptimism + ethers.parseEther(AMOUNT_TO_BURN)
+      initialBalanceOptimism + parseEther(AMOUNT_TO_BURN).toBigInt()
     );
 
     // 5. Burn tokens on Optimism
-    await burnTokens({
+    const optimismBurnReceipt = await burnTokens({
       contractAddress: contractAddressOptimism,
       signer: optimismSigner,
       amount: AMOUNT_TO_BURN,
@@ -280,19 +301,25 @@ describe("Cross-chain ERC20 Test", () => {
     });
     console.log(
       "Final Optimism balance after burning:",
-      ethers.formatEther(afterBurnBalanceOptimism)
+      formatEther(afterBurnBalanceOptimism)
     );
     expect(afterBurnBalanceOptimism).to.equal(
-      afterRelayBalanceOptimism - ethers.parseEther(AMOUNT_TO_BURN)
+      afterRelayBalanceOptimism - parseEther(AMOUNT_TO_BURN).toBigInt()
     );
+
+    const optimismBurnLog = await getBurnEventLog({
+      contractAddress: contractAddressOptimism,
+      blockHash: optimismBurnReceipt?.blockHash || "",
+      provider: optimismProvider,
+    });
 
     // 6. Execute the gelato function on Optimism as listener
     const { result: optimismRunRes } = await runWeb3Function(
       w3fPath,
-      optimismContext,
-      [optimismProvider]
+      { ...optimismContext, log: optimismBurnLog },
+      [arbitrumRpc || "", optimismRpc || ""]
     );
-    expect(optimismRunRes.canExec).to.be.true;
+    expect(optimismRunRes.canExec).to.be.false;
     // Wait to not exceed the rate limit
     await sleep(WAIT_TIME_AFTER_FUNCTION_EXECUTION);
 
@@ -303,10 +330,10 @@ describe("Cross-chain ERC20 Test", () => {
     });
     console.log(
       "Final Arbitrum balance after cross-chain relay:",
-      ethers.formatEther(finalBalanceArbitrum)
+      formatEther(finalBalanceArbitrum)
     );
     expect(finalBalanceArbitrum).to.equal(
-      afterBurnBalanceArbitrum + ethers.parseEther(AMOUNT_TO_BURN)
+      afterBurnBalanceArbitrum + parseEther(AMOUNT_TO_BURN).toBigInt()
     );
   });
 });
